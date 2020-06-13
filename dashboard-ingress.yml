@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: dashboard-ingress
+  namespace: kubernetes-dashboard
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.org/ssl-services: kubernetes-dashboard
+    nginx.ingress.kubernetes.io/auth-url: https://dashboard.rahmatawe.com/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: https://dashboard.rahmatawe.com/oauth2/start?rd=https://$host$request_uri$is_args$args
+    nginx.ingress.kubernetes.io/secure-backends: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      auth_request_set $token $upstream_http_authorization;
+      proxy_set_header Authorization $token;
+spec:
+  rules:
+  - host: dashboard.rahmatawe.com
+    http:
+      paths:
+      - backend:
+          serviceName: kubernetes-dashboard
+          servicePort: 443
+        path: /
