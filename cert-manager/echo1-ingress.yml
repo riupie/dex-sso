@@ -1,21 +1,20 @@
 apiVersion: networking.k8s.io/v1beta1
 kind: Ingress
 metadata:
-  name: dex
-  namespace: auth-system
+  name: echo1-ingress
   annotations:
     kubernetes.io/ingress.class: "nginx"
     cert-manager.io/cluster-issuer: "tls-ca-issuer"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   tls:
   - hosts:
-    - dex.rahmatawe.com
-    secretName: dex
+    - echo1.kubernetes.riupie.com
+    secretName: my-dev-tls
   rules:
-  - host: dex.rahmatawe.com
+  - host: echo1.kubernetes.riupie.com
     http:
       paths:
       - backend:
-          serviceName: dex
-          servicePort: 5556
+          serviceName: echo1
+          servicePort: 80

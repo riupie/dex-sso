@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    k8s-app: oauth2-proxy
+  name: oauth2-proxy
+  namespace: auth-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        k8s-app: oauth2-proxy
+    spec:
+      containers:
+      - args:
+        - --cookie-secure=false
+        - --provider=oidc
+        - --client-id=oidc-auth-client
+        - --client-secret=XmT7EHo27skGchX0yLQNTYXibm3aNkx5
+        - --oidc-issuer-url=https://dex.kubernetes.riupie.com
+        - --redirect-url=http://dashboard.kubernetes.riupie.com/oauth2/callback
+        - --email-domain=*
+        - --set-authorization-header=true
+        - --ssl-insecure-skip-verify
+        - --upstream=file:///dev/null
+        - --http-address=0.0.0.0:4180
+        - --whitelist-domain=dashboard.kubernetes.riupie.com
+        env:
+        - name: OAUTH2_PROXY_COOKIE_SECRET
+          value: fOksHBeg7wH1E9OPThGh8g==
+        image: quay.io/oauth2-proxy/oauth2-proxy:latest
+        imagePullPolicy: Always
+        name: oauth2-proxy
+        ports:
+        - containerPort: 4180
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    k8s-app: oauth2-proxy
+  name: oauth2-proxy
+  namespace: auth-system
+spec:
+  ports:
+  - name: http
+    port: 4180
+    protocol: TCP
+    targetPort: 4180
+  selector:
+    k8s-app: oauth2-proxy
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: dashboard-ingress
+  namespace: kubernetes-dashboard
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "8k"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.org/ssl-backends: "kubernetes-dashboard"
+    nginx.ingress.kubernetes.io/secure-backends: "true"
+    nginx.ingress.kubernetes.io/auth-url: "https://dashboard.kubernetes.riupie.com/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://dashboard.kubernetes.riupie.com/oauth2/start?rd=https://$host$request_uri$is_args$args"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      auth_request_set $token $upstream_http_authorization;
+      proxy_set_header Authorization $token;
+spec:
+  rules:
+  - host: dashboard.kubernetes.riupie.com
+    http:
+      paths:
+      - backend:
+          serviceName: kubernetes-dashboard
+          servicePort: 443
+        path: /
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "tls-ca-issuer"
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+  name: oauth-proxy
+  namespace: auth-system
+spec:
+  rules:
+  - host: dashboard.kubernetes.riupie.com
+    http:
+      paths:
+      - backend:
+          serviceName: oauth2-proxy
+          servicePort: 4180
+        path: /oauth2
+  tls:
+  - hosts:
+    - dashboard.kubernetes.riupie.com
+    secretName: kubernetes-dashboard-proxy-tls

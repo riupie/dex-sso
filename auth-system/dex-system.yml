@@ -1,0 +1,196 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: dex
+  name: dex
+  namespace: auth-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dex
+  namespace: auth-system
+rules:
+- apiGroups: ["dex.coreos.com"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dex
+  namespace: auth-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dex
+subjects:
+- kind: ServiceAccount
+  name: dex
+  namespace: auth-system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex
+  namespace: auth-system
+data:
+  config.yaml: |
+    issuer: https://dex.kubernetes.riupie.com
+    web:
+      http: 0.0.0.0:5556
+    frontend:
+      theme: custom
+    telemetry:
+      http: 0.0.0.0:5558
+    staticClients:
+    - id: oidc-auth-client
+      redirectURIs:
+      - 'https://kubectl.kubernetes.riupie.com/callback'
+      - 'http://dashboard.kubernetes.riupie.com/oauth2/callback'
+      name: 'oidc-auth-client'
+      secret: XmT7EHo27skGchX0yLQNTYXibm3aNkx5
+    connectors:
+    - type: ldap
+      id: ldap
+      name: LDAP
+      config:
+        host: ldap.riupie.com:389
+        insecureNoSSL: true
+        insecureSkipVerify: true
+        bindDN: CN=admin,DC=riupie,DC=com
+        bindPW: mysecret #Add Administrator password
+        usernamePrompt: SSO Username
+        userSearch:
+          baseDN: OU=People,DC=riupie,DC=com
+          filter: "(objectClass=person)"
+          username: mail
+          idAttr: uid
+          emailAttr: mail
+          nameAttr: cn
+        groupSearch:
+          baseDN: OU=Groups,DC=riupie,DC=com
+          filter: "(objectClass=groupOfNames)"
+          userAttr: DN
+          groupAttr: member
+          nameAttr: cn
+    oauth2:
+      skipApprovalScreen: true
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: dex
+  name: dex
+  namespace: auth-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: dex
+        revision: "1"
+    spec:
+      initContainers:
+      - name: dl-theme
+        image: alpine/git
+        command:
+         - git
+         - clone
+         - "https://github.com/sguyennet/dex-inkubate-branding.git"
+         - /theme
+        volumeMounts:
+        - name: theme
+          mountPath: /theme/
+      containers:
+      - command:
+        - /usr/local/bin/dex
+        - serve
+        - /etc/dex/cfg/config.yaml
+        image: quay.io/dexidp/dex:v2.24.0
+        imagePullPolicy: IfNotPresent
+        name: dex
+        ports:
+        - containerPort: 5556
+          name: http
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/dex/cfg
+          name: config
+        - mountPath: /web/themes/custom/
+          name: theme
+      dnsPolicy: ClusterFirst
+      serviceAccountName: dex
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: config.yaml
+            path: config.yaml
+          name: dex
+        name: config
+      - name: theme
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  namespace: auth-system
+spec:
+  selector:
+    app: dex
+  ports:
+  - name: dex
+    port: 5556
+    protocol: TCP
+    targetPort: 5556
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: dex-ingress
+  namespace: auth-system
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "tls-ca-issuer"
+#    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - dex.kubernetes.riupie.com
+    secretName: dex
+  rules:
+  - host: dex.kubernetes.riupie.com
+    http:
+      paths:
+      - backend:
+          serviceName: dex
+          servicePort: 5556

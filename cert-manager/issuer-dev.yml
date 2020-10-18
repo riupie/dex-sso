@@ -1,0 +1,9 @@
+---
+apiVersion: cert-manager.io/v1alpha2
+kind: ClusterIssuer
+metadata:
+  name: tls-ca-issuer
+  namespace: cert-manager
+spec:
+  ca:
+    secretName: ssc-tls-secret
